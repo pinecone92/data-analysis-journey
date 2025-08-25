@@ -1,0 +1,237 @@
+---
+title: "Dallas Animal Analysis"
+author: "Ace"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+
+# Executive Summary
+
+This report analyzes intake and outcome data for dogs and cats at the Dallas Animal Shelter (Week 18). The goal is to understand trends in intake, outcomes, and breed-specific patterns, identify areas of concern, and provide actionable insights.
+
+**Key findings:**
+- Dogs are more likely than cats to be returned to owners or adopted.
+- Cats have higher rates of euthanasia.
+- Certain dog breeds (Pitbulls, Labradors, German Shepherds) are disproportionately represented among euthanized animals.
+- Stray animals are more likely to be euthanized than owner surrenders.
+- Council districts with the highest intake counts can inform outreach and resource allocation.
+
+
+
+```{r setup}
+
+ # readxl installed because data sheet is excel and not csv
+ #janitor for cleaning data
+ 
+
+# Load packages
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(lubridate)
+
+
+
+```
+# Data Cleaning & Preparation
+
+Steps taken:
+- Filtered dataset to dogs and cats only.
+- Removed duplicate outcomes (`outcome_type == "DUPLICATE"`).
+- Converted Excel numeric dates (`intake_date`, `outcome_date`) into R Date objects.
+- Created derived columns: `intake_year`, `outcome_year`, `days_in_shelter`.
+- Filtered out rows with missing outcome dates only for time-based analyses, preserving other rows for categorical analyses.
+
+**Rationale:** Ensures analysis is based on clean, accurate data without losing valuable records unnecessarily.
+
+
+```{r}
+ 
+# Load dataset
+sh_raw <- read_excel("C:/Users/HOME/Desktop/CSV files/data-analysis-journey/Dallas_Animals/week18_dallas_animals.xlsx", sheet = "simple")
+
+# Clean and prepare main dataset
+sh <- sh_raw %>%
+  clean_names() %>%
+  filter(animal_type %in% c("DOG", "CAT")) %>%
+  filter(outcome_type != "DUPLICATE") %>%
+  mutate(
+    intake_date = as.Date(as.numeric(intake_date), origin = "1899-12-30"),
+    outcome_date = suppressWarnings(as.Date(as.numeric(outcome_date), origin = "1899-12-30"))
+  )
+
+# Create subset for time-based analyses
+sh_with_dates <- sh %>%
+  filter(!is.na(outcome_date)) %>%
+  mutate(
+    intake_year = year(intake_date),
+    outcome_year = year(outcome_date),
+    days_in_shelter = as.numeric(outcome_date - intake_date)
+  )
+
+  #)
+
+view(sh_with_dates)  
+
+```
+
+# Overall Outcome Distribution
+
+**Objective:** Compare outcomes between dogs and cats.
+
+**Observations:** Dogs dominate adoptions and returns to owners. Cats have higher euthanasia rates. Very few animals die on arrival.
+
+
+
+
+
+```{r}
+
+sh %>%
+  count(animal_type, outcome_type) %>%
+  ggplot(aes(x = outcome_type, y = n, fill = animal_type)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Outcome Distribution by Animal Type",
+    x = "Outcome Type", y = "Count"
+  ) +
+  theme_minimal()
+
+``` 
+
+# Breed-Specific Euthanasia Patterns
+
+**Objective:** Identify dog breeds most frequently euthanized.
+
+**Observations:** Pitbulls, Labradors, German Shepherds, and Chihuahuas are the most frequently euthanized. Intake type contributes: strays and owner surrenders show different patterns.
+
+**Interpretation:** Potential breed bias or resource allocation issues at the shelter. Useful for policy review and breed-specific outreach programs.
+
+ 
+ 
+ 
+```{r} 
+ 
+# Filter euthanized dogs
+euth_dogs <- sh %>%
+  filter(animal_type == "DOG", outcome_type == "EUTHANIZED")
+
+# Top 10 breeds
+euth_breed_intake <- euth_dogs %>%
+  count(animal_breed, intake_type, sort = TRUE) %>%
+  slice_max(n, n = 10)
+
+# Bar chart rotated
+ggplot(euth_breed_intake, aes(x = reorder(animal_breed, n), y = n, fill = intake_type)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top Dog Breeds Euthanized by Intake Type",
+    x = "Dog Breed",
+    y = "Count",
+    fill = "Intake Type"
+  ) +
+  theme_minimal()
+
+
+```
+# Outcomes by Intake Type
+
+**Objective:** Understand how intake circumstances relate to outcomes.
+
+**Observations:** Stray animals are disproportionately euthanized. Owner surrenders have higher adoption rates. Foster-intake animals: very few “missing” cases observed (documented anomalies).
+
+
+
+
+```{r}
+
+sh %>%
+  count(intake_type, outcome_type) %>%
+  ggplot(aes(x = intake_type, y = n, fill = outcome_type)) +
+  geom_col(position = "fill") +
+  labs(
+    title = "Proportion of Outcomes by Intake Type",
+    y = "Proportion", x = "Intake Type"
+  ) +
+  theme_minimal()
+
+```
+
+# Intakes by Council District
+
+**Objective:** Geographic distribution of shelter intake.
+
+**Observations:** Certain districts have consistently high intakes. Useful for community outreach or low-cost spay/neuter programs.
+
+
+
+
+
+
+```{r}
+#  Intakes by Council District -------------------------------
+
+sh %>%
+  count(council_district, animal_type) %>%
+  ggplot(aes(x = council_district, y = n, fill = animal_type)) +
+  geom_col() +
+  labs(
+    title = "Animal Intakes by Council District",
+    x = "Council District", y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+# Time Trends
+
+**Objective:** Explore annual intake trends.
+
+**Observations:** Dogs consistently have higher intake counts than cats. Trends indicate increasing/decreasing intake for specific years (based on cleaned subset).
+
+
+
+
+
+
+
+```{r}
+
+# Time Trend of Intakes -------------------------------------
+
+sh_with_dates %>%
+  count(intake_year, animal_type) %>%
+  ggplot(aes(x = intake_year, y = n, color = animal_type)) +
+  geom_line(size = 1.2) +
+  labs(
+    title = "Intake Trends Over Time",
+    x = "Year", y = "Intake Count"
+  ) +
+  theme_minimal()
+
+
+
+
+
+ 
+```
+# Notes on Data Quality / Anomalies
+
+- Some Excel dates required conversion due to non-standard formats.
+- Rows with missing outcome dates were excluded only when calculating time-based metrics.
+- Foster animals marked “MISSING” included duplicates; retained in dataset as possible distinct cases.
+
+
+
+
+# Recommendations
+
+- **Microchipping campaigns:** Increase return-to-owner rates.
+- **Breed-specific interventions:** Review euthanasia policies for high-risk breeds.
+- **Geographic outreach:** Focus on high-intake council districts.
+- **Time-based monitoring:** Track trends to anticipate resource needs.
+
+
